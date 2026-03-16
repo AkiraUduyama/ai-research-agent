@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>リサーチAgent</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+:root { --accent:#4f46e5; --sidebar-w:210px; }
+body { display:flex; min-height:100vh; background:#f1f5f9; font-size:.92rem; margin:0; }
+#sidebar {
+  width:var(--sidebar-w); min-width:var(--sidebar-w);
+  background:#1e293b; color:#cbd5e1;
+  display:flex; flex-direction:column;
+  position:sticky; top:0; height:100vh; overflow-y:auto;
+}
+#main { flex:1; padding:1.4rem; overflow-y:auto; min-width:0; }
+#sidebar .brand { padding:1.1rem 1rem .6rem; font-weight:700; color:#fff; border-bottom:1px solid #334155; font-size:.95rem; }
+#sidebar .nav-link {
+  color:#94a3b8; border-radius:8px; padding:.48rem .85rem;
+  margin:.1rem .35rem; display:flex; align-items:center; gap:.5rem;
+  cursor:pointer; transition:.15s; font-size:.88rem;
+}
+#sidebar .nav-link:hover  { color:#fff; background:#334155; }
+#sidebar .nav-link.active { color:#fff; background:var(--accent); }
+#sidebar .run-section { padding:.7rem; border-top:1px solid #334155; margin-top:auto; }
+.tab-pane-custom { display:none; }
+.tab-pane-custom.active { display:block; }
+.card { border:none; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+.card-header { background:transparent; border-bottom:1px solid #e2e8f0; font-weight:600; }
+.news-item { border-left:3px solid #e2e8f0; padding:.4rem .8rem; margin-bottom:.35rem;
+  background:#fff; border-radius:0 8px 8px 0; transition:.1s; }
+.news-item:hover { border-left-color:var(--accent); }
+.badge-cat { font-size:.68rem; padding:.22em .5em; border-radius:4px; white-space:nowrap; }
+.link-card {
+  background:#fff; border-radius:12px; padding:.85rem 1rem;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);
+  cursor:pointer; transition:.15s; border:2px solid transparent;
+  text-decoration:none; color:inherit; display:block;
+}
+.link-card:hover { border-color:var(--accent); transform:translateY(-1px); color:inherit; }
+.link-card .link-name { font-weight:600; font-size:.92rem; }
+.link-card .link-url  { font-size:.73rem; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.link-card .link-memo { font-size:.78rem; color:#64748b; margin-top:.2rem; }
+.link-actions { display:flex; gap:.3rem; margin-top:.5rem; }
+.btn-xs { padding:.18rem .45rem; font-size:.75rem; }
+.stat-card { border-radius:12px; padding:.9rem 1.1rem; color:#fff; }
+#toast-container { position:fixed; bottom:1.4rem; right:1.4rem; z-index:9999;
+  display:flex; flex-direction:column; gap:.35rem; }
+.toast-msg { background:#1e293b; color:#fff; padding:.5rem 1rem; border-radius:8px;
+  font-size:.83rem; animation:fadeIn .2s; max-width:300px; }
+.toast-msg.success { border-left:4px solid #22c55e; }
+.toast-msg.error   { border-left:4px solid #ef4444; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+@media (max-width:640px) {
+  #sidebar { width:56px; min-width:56px; }
+  #sidebar .brand, #sidebar .nav-link span, #sidebar .run-section .btn-label { display:none; }
+  #sidebar .nav-link { justify-content:center; padding:.55rem; margin:.1rem .25rem; }
+  #sidebar .run-section { padding:.4rem; }
+  #main { padding:.8rem; }
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="brand">🔍 <span>リサーチAgent</span>
+    <div style="margin-top:.3rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+      <small id="ver-label" style="font-size:.72rem;font-weight:600;color:#818cf8">読込中...</small>
+      <small id="cloud-badge" style="display:none;font-size:.65rem;background:#0ea5e9;color:#fff;padding:.1em .4em;border-radius:3px">☁️ Cloud</small>
+    </div>
+  </div>
+  <ul class="nav flex-column mt-2" id="sideNav">
+    <li><a class="nav-link active" data-tab="dashboard"><i class="bi bi-speedometer2"></i><span>ダッシュボード</span></a></li>
+    <li><a class="nav-link" data-tab="links"><i class="bi bi-bookmark-star"></i><span>お気に入りリンク</span></a></li>
+    <li><a class="nav-link" data-tab="feeds"><i class="bi bi-rss"></i><span>RSS収集</span></a></li>
+    <li><a class="nav-link" data-tab="discord"><i class="bi bi-discord"></i><span>Discord設定</span></a></li>
+    <li><a class="nav-link" data-tab="settings"><i class="bi bi-gear"></i><span>設定・スマホ</span></a></li>
+  </ul>
+  <div class="run-section d-flex flex-column gap-1">
+    <button id="btn-rss" class="btn btn-success btn-sm w-100" onclick="runMode('rss')" title="RSS収集実行">
+      <i class="bi bi-play-fill"></i><span class="btn-label"> RSS実行</span>
+    </button>
+    <button id="btn-restart" class="btn btn-outline-warning btn-sm w-100" onclick="restartServer()" title="サーバー再起動">
+      <i class="bi bi-arrow-clockwise"></i><span class="btn-label"> 再起動</span>
+    </button>
+  </div>
+</div>
+
+<div id="main">
+
+  <!-- ── ダッシュボード ── -->
+  <div id="tab-dashboard" class="tab-pane-custom active">
+    <div class="d-flex align-items-center mb-3">
+      <h5 class="mb-0">📊 ダッシュボード</h5>
+      <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="loadDashboard()">
+        <i class="bi bi-arrow-clockwise"></i> 更新
+      </button>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <div class="stat-card" style="background:#4f46e5">
+          <div class="fw-bold fs-4" id="stat-total">-</div>
+          <div class="small opacity-75">累計記事数</div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="stat-card" style="background:#0891b2">
+          <div class="fw-bold fs-4" id="stat-today">-</div>
+          <div class="small opacity-75">今日の新着</div>
+        </div>
+      </div>
+    </div>
+    <!-- カテゴリフィルタ（登録済みフィードから自動生成） -->
+    <div class="d-flex flex-wrap gap-2 mb-3" id="cat-filters"></div>
+    <div id="news-list"><div class="text-muted small">読み込み中...</div></div>
+  </div>
+
+  <!-- ── お気に入りリンク ── -->
+  <div id="tab-links" class="tab-pane-custom">
+    <div class="d-flex align-items-center mb-3">
+      <h5 class="mb-0">🔖 お気に入りリンク</h5>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="openLinkModal()">
+        <i class="bi bi-plus"></i> 追加
+      </button>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mb-3" id="link-cat-filters">
+      <button class="btn btn-sm btn-dark" onclick="filterLinks('')" data-lcat="">すべて</button>
+    </div>
+    <div id="links-grid" class="row g-2">
+      <div class="text-muted small">読み込み中...</div>
+    </div>
+  </div>
+
+  <!-- ── RSS収集 ── -->
+  <div id="tab-feeds" class="tab-pane-custom">
+    <div class="d-flex align-items-center mb-3">
+      <h5 class="mb-0">📡 RSS フィード管理</h5>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="openFeedModal()">
+        <i class="bi bi-plus"></i> 追加
+      </button>
+    </div>
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>フィード名</th><th>URL</th><th>カテゴリ</th><th>通知先</th><th>頻度</th><th>状態</th><th>操作</th></tr>
+            </thead>
+            <tbody id="feeds-body">
+              <tr><td colspan="7" class="text-muted text-center py-3">読み込み中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="alert alert-info mt-3 small">
+      <i class="bi bi-info-circle"></i>
+      RSS URLの例: <code>https://natalie.mu/comic/feed/</code> (コミックナタリー)、
+      <code>https://zenn.dev/feed</code> (Zenn) など。
+      フィードを追加するとダッシュボードのカテゴリも自動で追加されます。
+    </div>
+  </div>
+
+  <!-- ── Discord設定 ── -->
+  <div id="tab-discord" class="tab-pane-custom">
+    <div class="d-flex align-items-center mb-3">
+      <h5 class="mb-0">🔔 Discord チャンネル設定</h5>
+      <button class="btn btn-primary btn-sm ms-auto" onclick="openDiscordModal()">
+        <i class="bi bi-plus"></i> 追加
+      </button>
+    </div>
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>チャンネル名</th><th>キー</th><th>Webhook URL</th><th>状態</th><th>操作</th></tr>
+            </thead>
+            <tbody id="discord-body">
+              <tr><td colspan="5" class="text-muted text-center py-3">読み込み中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="alert alert-info mt-3 small">
+      <i class="bi bi-info-circle"></i>
+      Webhook取得: Discordチャンネル右クリック → 設定 → 連携サービス → ウェブフック → 新しいウェブフック → URLをコピー
+    </div>
+  </div>
+
+  <!-- ── 設定・スマホ ── -->
+  <div id="tab-settings" class="tab-pane-custom">
+    <h5 class="mb-3">⚙️ 設定・スマホアクセス</h5>
+    <div class="row g-3">
+
+      <div class="col-12">
+        <div class="card border-0" style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff">
+          <div class="card-body">
+            <div class="fw-bold mb-3 fs-6">📱 スマホ・タブレットからアクセスする</div>
+            <div class="row g-3">
+
+              <!-- 同じWiFi -->
+              <div class="col-md-6">
+                <div class="p-3 rounded h-100" style="background:rgba(255,255,255,.08)">
+                  <div class="fw-semibold mb-1">① 同じWiFi（PC起動中）</div>
+                  <div class="small text-white-50 mb-2">QRを読み取るだけで開ける</div>
+                  <div class="d-flex align-items-start gap-3 mb-2">
+                    <div id="qr-code" style="background:#fff;padding:6px;border-radius:6px;line-height:0;flex-shrink:0">
+                      <canvas id="qr-canvas"></canvas>
+                    </div>
+                    <div>
+                      <code id="mobile-url" class="d-block px-2 py-1 rounded mb-2"
+                        style="background:#0f172a;font-size:.82rem;word-break:break-all">取得中...</code>
+                      <button class="btn btn-sm btn-outline-light" onclick="copyMobileUrl()">
+                        <i class="bi bi-clipboard"></i> URLをコピー
+                      </button>
+                    </div>
+                  </div>
+                  <div class="small text-white-50">※ PCとスマホが同じWiFiに接続されていること</div>
+                </div>
+              </div>
+
+              <!-- Vercel -->
+              <div class="col-md-6">
+                <div class="p-3 rounded h-100" style="background:rgba(255,255,255,.08)">
+                  <div class="fw-semibold mb-1">② Vercel（PCオフOK）<span class="badge bg-success ms-1">完全無料</span></div>
+                  <div class="small text-white-50 mb-2">24時間どこからでもアクセスできる</div>
+                  <div class="input-group input-group-sm mb-2">
+                    <input class="form-control" id="vercel-url-input"
+                      placeholder="https://your-app.vercel.app"
+                      style="background:#0f172a;color:#fff;border-color:#475569">
+                    <button class="btn btn-outline-light" onclick="saveVercelUrl()">保存</button>
+                  </div>
+                  <div id="vercel-url-display" style="display:none" class="mb-2">
+                    <a id="vercel-url-link" href="#" target="_blank" class="btn btn-success btn-sm w-100">
+                      <i class="bi bi-box-arrow-up-right"></i> Vercelで開く
+                    </a>
+                    <div class="mt-2 text-center">
+                      <canvas id="qr-vercel-canvas" style="background:#fff;padding:4px;border-radius:4px"></canvas>
+                    </div>
+                  </div>
+                  <div id="cloud-mode-badge" style="display:none" class="alert alert-success py-1 px-2 small mb-0">
+                    ✅ 現在クラウドモードで動作中
+                  </div>
+                  <div class="small text-white-50 mt-1">vercel.com で無料デプロイ後にURLを入力</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ストレージ設定（ローカルのみ） -->
+      <div class="col-md-6" id="local-storage-section">
+        <div class="card">
+          <div class="card-header">ストレージ設定（PC版のみ）</div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold">DBファイルパス</label>
+              <input class="form-control form-control-sm" id="db-path"
+                placeholder="例: C:/Users/user/AI_research_agent/data/research.db">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">記事保存日数</label>
+              <input class="form-control form-control-sm" id="keep-days" type="number" min="1" max="365">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="saveSettings()">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 無料ツール表 -->
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">✅ 使用中の無料ツール</div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead class="table-light">
+                <tr><th>ツール</th><th>用途</th><th>有料リスク</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>RSS / feedparser</td><td>情報収集</td><td><span class="badge bg-success">なし</span></td></tr>
+                <tr><td>Discord Webhook</td><td>通知</td><td><span class="badge bg-success">なし</span></td></tr>
+                <tr><td>Vercel</td><td>スマホGUI</td><td><span class="badge bg-success">なし</span></td></tr>
+                <tr><td>GitHub Gist</td><td>データ保存</td><td><span class="badge bg-success">なし</span></td></tr>
+                <tr><td>GitHub Actions</td><td>定期実行</td><td><span class="badge bg-success">なし</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== MODALS ===== -->
+
+<!-- リンク追加・編集 -->
+<div class="modal fade" id="modalLink" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">リンク 追加・編集</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="lk-idx" value="-1">
+        <div class="mb-3">
+          <label class="form-label small fw-bold">名前 <span class="text-danger">*</span></label>
+          <input class="form-control" id="lk-name" placeholder="例: ポケモンカード公式">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-bold">URL <span class="text-danger">*</span></label>
+          <input class="form-control" id="lk-url" placeholder="https://...">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-bold">カテゴリ（任意）</label>
+          <input class="form-control" id="lk-category" placeholder="例: カードゲーム、漫画、AI情報 など">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-bold">メモ（任意）</label>
+          <input class="form-control" id="lk-memo" placeholder="例: 新弾情報チェック用">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button class="btn btn-primary" onclick="saveLink()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RSSフィード追加・編集 -->
+<div class="modal fade" id="modalFeed" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">RSSフィード 追加・編集</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="f-edit-idx" value="-1">
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="form-label small fw-bold">フィード名 *</label>
+            <input class="form-control" id="f-name" placeholder="例: コミックナタリー">
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-bold">RSS URL *</label>
+            <input class="form-control" id="f-url" placeholder="https://.../feed.xml">
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-bold">カテゴリ</label>
+            <select class="form-select" id="f-category"></select>
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-bold">Discord通知先</label>
+            <select class="form-select" id="f-channel"></select>
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-bold">収集頻度</label>
+            <select class="form-select" id="f-interval">
+              <option value="1">1時間ごと</option>
+              <option value="3">3時間ごと</option>
+              <option value="6">6時間ごと</option>
+              <option value="12">12時間ごと</option>
+              <option value="24">1日1回</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button class="btn btn-primary" onclick="saveFeed()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Discord追加・編集 -->
+<div class="modal fade" id="modalDiscord" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Discordチャンネル 追加・編集</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="d-edit-key">
+        <div class="mb-3">
+          <label class="form-label small fw-bold">チャンネル名（日本語OK）</label>
+          <input class="form-control" id="d-label" placeholder="例: カードゲーム情報">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-bold">キー（英数字・アンダーバー）</label>
+          <input class="form-control" id="d-key" placeholder="例: card_game">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-bold">Webhook URL</label>
+          <input class="form-control" id="d-webhook" placeholder="https://discord.com/api/webhooks/...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button class="btn btn-primary" onclick="saveDiscordChannel()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 実行ログ -->
+<div class="modal fade" id="modalRun" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">実行ログ</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <pre id="run-log" style="max-height:400px;overflow-y:auto;font-size:.8rem;
+          background:#1e293b;color:#e2e8f0;padding:1rem;border-radius:8px;white-space:pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+'use strict';
+let channels = [], allCategories = [], feedsData = [], linksData = [];
+let isCloud = false;
+
+// ── API ──────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch(path, opts);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  } catch(e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+function toast(msg, type='success') {
+  const el = document.createElement('div');
+  el.className = 'toast-msg ' + type;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ── カテゴリ色・ラベル ────────────────────────────────────────────────
+const CAT_COLORS = {
+  ai_news:'#22c55e', ai_paper:'#0ea5e9', manga:'#ec4899', anime:'#8b5cf6',
+  news:'#64748b', magazine:'#a16207', pokemon_card:'#d97706',
+  onepiece_card:'#f97316', game_news:'#6366f1', education:'#f59e0b',
+};
+const CAT_LABELS = {
+  ai_news:'🤖 AIニュース', ai_paper:'🧠 AI論文', manga:'📚 漫画・新刊',
+  anime:'📺 アニメ', news:'📰 ニュース', magazine:'📖 雑誌',
+  pokemon_card:'⚡ ポケモンカード', onepiece_card:'🏴 ワンピースカード',
+  game_news:'🎮 ゲーム', education:'🎓 教育',
+};
+
+// ── Tab navigation ───────────────────────────────────────────────────
+const tabInitFns = {
+  dashboard: loadDashboard,
+  links:     loadLinks,
+  feeds:     loadFeeds,
+  discord:   loadDiscord,
+  settings:  loadSettings,
+};
+document.querySelectorAll('#sideNav .nav-link').forEach(link => {
+  link.addEventListener('click', () => {
+    document.querySelectorAll('#sideNav .nav-link').forEach(l => l.classList.remove('active'));
+    document.querySelectorAll('.tab-pane-custom').forEach(t => t.classList.remove('active'));
+    link.classList.add('active');
+    const tab = link.dataset.tab;
+    document.getElementById('tab-' + tab).classList.add('active');
+    tabInitFns[tab]?.();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ══════════════════════════════════════════════════════════════════════
+async function loadDashboard() {
+  const [s] = await Promise.all([api('GET', '/api/stats')]);
+  document.getElementById('stat-total').textContent = s.total_news ?? 0;
+  document.getElementById('stat-today').textContent = s.today_news ?? 0;
+  await buildCatFilters();
+  loadNews('');
+}
+
+// カテゴリフィルタ = 登録済みフィードのカテゴリから動的生成
+async function buildCatFilters() {
+  if (!feedsData.length) {
+    feedsData = await api('GET', '/api/feeds');
+  }
+  const usedCats = [...new Set(feedsData.map(f => f.category).filter(Boolean))];
+  const ordered  = Object.keys(CAT_COLORS).filter(k => usedCats.includes(k))
+                    .concat(usedCats.filter(k => !CAT_COLORS[k]));
+
+  const f = document.getElementById('cat-filters');
+  f.innerHTML = `<button class="btn btn-sm btn-dark" onclick="loadNews('','すべて')" data-cat="">すべて</button>`;
+  ordered.forEach(cat => {
+    const col = CAT_COLORS[cat] || '#64748b';
+    const lbl = CAT_LABELS[cat] || cat;
+    f.innerHTML += `<button class="btn btn-sm" onclick="loadNews('${cat}','${lbl}')"
+      data-cat="${cat}" style="background:${col};color:#fff;border:none">${lbl}</button>`;
+  });
+}
+
+let currentNewsCat = '';
+async function loadNews(cat) {
+  currentNewsCat = cat;
+  // アクティブ表示
+  document.querySelectorAll('#cat-filters button').forEach(b => {
+    b.style.opacity = (!cat || b.dataset.cat === cat) ? '1' : '0.45';
+  });
+  const items = await api('GET', `/api/news?category=${encodeURIComponent(cat)}&limit=80`);
+  const el = document.getElementById('news-list');
+  if (!Array.isArray(items) || !items.length) {
+    el.innerHTML = '<div class="text-muted small py-3 text-center">' +
+      (isCloud ? '記事がありません（GitHub Actionsが実行されると表示されます）'
+                : '記事がありません（RSS実行ボタンで収集してください）') + '</div>';
+    return;
+  }
+  el.innerHTML = items.map(it => {
+    const title = (it.title_ja || it.title || '(タイトルなし)').substring(0, 100);
+    const col   = CAT_COLORS[it.category] || '#64748b';
+    const lbl   = CAT_LABELS[it.category] || it.category;
+    return `<div class="news-item" id="ni-${it.id}">
+      <div class="d-flex align-items-start gap-2">
+        <span class="badge-cat text-white flex-shrink-0" style="background:${col}">${lbl}</span>
+        <div class="flex-grow-1 overflow-hidden">
+          <a href="${it.url}" target="_blank" class="text-decoration-none text-dark"
+             style="font-size:.87rem">${title}</a>
+          <div class="text-muted" style="font-size:.73rem">${it.feed || ''} · ${it.created_at || ''}</div>
+        </div>
+        <button class="btn btn-xs btn-outline-danger flex-shrink-0"
+          onclick="deleteNews(${it.id})"><i class="bi bi-trash3"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteNews(id) {
+  await api('DELETE', `/api/news/${id}`);
+  document.getElementById('ni-' + id)?.remove();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  QUICK LINKS
+// ══════════════════════════════════════════════════════════════════════
+let currentLinkCat = '';
+
+async function loadLinks() {
+  linksData = await api('GET', '/api/links');
+  if (!Array.isArray(linksData)) linksData = [];
+  buildLinkCatFilters();
+  renderLinks(currentLinkCat);
+}
+
+function buildLinkCatFilters() {
+  const cats = [...new Set(linksData.map(l => l.category || '').filter(Boolean))];
+  const f = document.getElementById('link-cat-filters');
+  f.innerHTML = `<button class="btn btn-sm btn-dark" onclick="filterLinks('')" data-lcat="">すべて</button>`;
+  cats.forEach(c => {
+    f.innerHTML += `<button class="btn btn-sm btn-outline-secondary" onclick="filterLinks('${c}')" data-lcat="${c}">${c}</button>`;
+  });
+}
+
+function filterLinks(cat) {
+  currentLinkCat = cat;
+  document.querySelectorAll('#link-cat-filters button').forEach(b => {
+    b.className = b.dataset.lcat === cat ? 'btn btn-sm btn-dark' : 'btn btn-sm btn-outline-secondary';
+  });
+  renderLinks(cat);
+}
+
+function renderLinks(cat) {
+  const grid = document.getElementById('links-grid');
+  const filtered = cat ? linksData.filter(l => l.category === cat) : linksData;
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="text-muted small col-12 py-3">リンクが登録されていません。「追加」ボタンで登録してください。</div>';
+    return;
+  }
+  grid.innerHTML = filtered.map(lk => {
+    const realIdx = linksData.indexOf(lk);
+    const catBadge = lk.category
+      ? `<span class="badge bg-secondary me-1" style="font-size:.68rem">${lk.category}</span>` : '';
+    return `<div class="col-6 col-md-4 col-lg-3">
+      <a href="${lk.url}" target="_blank" class="link-card">
+        <div class="link-name">${lk.name}</div>
+        ${catBadge}
+        <div class="link-url">${lk.url}</div>
+        ${lk.memo ? `<div class="link-memo">${lk.memo}</div>` : ''}
+      </a>
+      <div class="link-actions">
+        <button class="btn btn-xs btn-outline-primary flex-fill"
+          onclick="event.stopPropagation();openLinkModal(${realIdx})">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-danger flex-fill"
+          onclick="event.stopPropagation();deleteLink(${realIdx})">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openLinkModal(idx) {
+  const lk = idx !== undefined ? linksData[idx] : null;
+  document.getElementById('lk-idx').value      = idx !== undefined ? idx : -1;
+  document.getElementById('lk-name').value     = lk?.name     || '';
+  document.getElementById('lk-url').value      = lk?.url      || '';
+  document.getElementById('lk-category').value = lk?.category || '';
+  document.getElementById('lk-memo').value     = lk?.memo     || '';
+  new bootstrap.Modal(document.getElementById('modalLink')).show();
+}
+
+async function saveLink() {
+  const idx  = parseInt(document.getElementById('lk-idx').value);
+  const data = {
+    name:     document.getElementById('lk-name').value.trim(),
+    url:      document.getElementById('lk-url').value.trim(),
+    category: document.getElementById('lk-category').value.trim(),
+    memo:     document.getElementById('lk-memo').value.trim(),
+  };
+  if (!data.name || !data.url) { toast('名前とURLは必須です', 'error'); return; }
+  const r = idx >= 0
+    ? await api('PUT',  `/api/links/${idx}`, data)
+    : await api('POST', '/api/links', data);
+  if (r.ok === false) { toast('保存失敗: ' + (r.error || ''), 'error'); return; }
+  bootstrap.Modal.getInstance(document.getElementById('modalLink')).hide();
+  toast('保存しました'); loadLinks();
+}
+
+async function deleteLink(idx) {
+  if (!confirm(`「${linksData[idx]?.name}」を削除しますか？`)) return;
+  await api('DELETE', `/api/links/${idx}`);
+  toast('削除しました'); loadLinks();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  RSS FEEDS
+// ══════════════════════════════════════════════════════════════════════
+async function loadFeeds() {
+  await refreshChannelSelects();
+  feedsData = await api('GET', '/api/feeds');
+  if (!Array.isArray(feedsData)) feedsData = [];
+  const tbody = document.getElementById('feeds-body');
+  if (!feedsData.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center py-3">RSSフィードが登録されていません</td></tr>';
+    return;
+  }
+  tbody.innerHTML = feedsData.map((f, i) => {
+    const catLabel = CAT_LABELS[f.category] || f.category;
+    return `<tr>
+      <td>${f.name}</td>
+      <td><small class="text-muted" style="display:block;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.url}">${f.url}</small></td>
+      <td><small>${catLabel}</small></td>
+      <td><small>${channelLabel(f.discord_channel)}</small></td>
+      <td><small>${f.check_interval_hours}h</small></td>
+      <td><span class="badge ${f.enabled?'bg-success':'bg-secondary'}">${f.enabled?'有効':'停止'}</span></td>
+      <td>
+        <button class="btn btn-xs btn-outline-primary me-1" onclick="openFeedModal(${i})"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-xs btn-outline-${f.enabled?'warning':'success'} me-1" onclick="toggleFeed(${i})">${f.enabled?'⏸':'▶'}</button>
+        <button class="btn btn-xs btn-outline-danger" onclick="deleteFeed(${i})"><i class="bi bi-trash3"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function openFeedModal(idx) {
+  await refreshChannelSelects();
+  allCategories = await api('GET', '/api/categories');
+  const catSel = document.getElementById('f-category');
+  catSel.innerHTML = allCategories.map(c => `<option value="${c.value}">${c.label}</option>`).join('');
+  document.getElementById('f-edit-idx').value = idx !== undefined ? idx : -1;
+  if (idx !== undefined) {
+    const f = feedsData[idx];
+    document.getElementById('f-name').value     = f.name;
+    document.getElementById('f-url').value      = f.url;
+    document.getElementById('f-category').value = f.category;
+    document.getElementById('f-channel').value  = f.discord_channel || 'default';
+    document.getElementById('f-interval').value = String(f.check_interval_hours || 1);
+  } else {
+    ['f-name','f-url'].forEach(id => document.getElementById(id).value = '');
+  }
+  new bootstrap.Modal(document.getElementById('modalFeed')).show();
+}
+
+async function saveFeed() {
+  const idx = parseInt(document.getElementById('f-edit-idx').value);
+  const data = {
+    name:                 document.getElementById('f-name').value.trim(),
+    url:                  document.getElementById('f-url').value.trim(),
+    category:             document.getElementById('f-category').value,
+    discord_channel:      document.getElementById('f-channel').value,
+    check_interval_hours: parseInt(document.getElementById('f-interval').value),
+  };
+  if (!data.name || !data.url) { toast('名前とURLは必須です', 'error'); return; }
+  const r = idx >= 0
+    ? await api('PUT',  `/api/feeds/${idx}`, data)
+    : await api('POST', '/api/feeds', data);
+  if (r.ok === false) { toast('保存失敗: ' + (r.error || ''), 'error'); return; }
+  bootstrap.Modal.getInstance(document.getElementById('modalFeed')).hide();
+  toast('保存しました'); loadFeeds();
+  // ダッシュボードのカテゴリも更新
+  await buildCatFilters();
+}
+
+async function deleteFeed(idx) {
+  if (!confirm('削除しますか？')) return;
+  await api('DELETE', `/api/feeds/${idx}`); toast('削除しました'); loadFeeds();
+  await buildCatFilters();
+}
+
+async function toggleFeed(idx) {
+  await api('POST', `/api/feeds/${idx}/toggle`); loadFeeds();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  DISCORD
+// ══════════════════════════════════════════════════════════════════════
+async function loadDiscord() {
+  channels = await api('GET', '/api/discord');
+  if (!Array.isArray(channels)) channels = [];
+  const tbody = document.getElementById('discord-body');
+  if (!channels.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">チャンネルが登録されていません</td></tr>';
+    return;
+  }
+  tbody.innerHTML = channels.map(ch => `
+    <tr>
+      <td><span class="fw-semibold">${ch.label}</span></td>
+      <td><code class="small">${ch.key}</code></td>
+      <td><small class="text-muted" style="display:block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ch.webhook_url||'(未設定)'}</small></td>
+      <td>${ch.enabled?'<span class="badge bg-success">有効</span>':'<span class="badge bg-secondary">無効</span>'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline-primary me-1" onclick="openDiscordModal('${ch.key}')"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-xs btn-outline-success me-1" onclick="testDiscord('${ch.key}')"><i class="bi bi-send"></i></button>
+        <button class="btn btn-xs btn-outline-danger" onclick="deleteDiscordChannel('${ch.key}')"><i class="bi bi-trash3"></i></button>
+      </td>
+    </tr>`).join('');
+}
+
+function openDiscordModal(key) {
+  const ch = channels.find(c => c.key === key);
+  document.getElementById('d-edit-key').value = key || '';
+  document.getElementById('d-label').value    = ch?.label       || '';
+  document.getElementById('d-key').value      = key             || '';
+  document.getElementById('d-key').disabled   = !!key;
+  document.getElementById('d-webhook').value  = ch?.webhook_url || '';
+  new bootstrap.Modal(document.getElementById('modalDiscord')).show();
+}
+
+async function saveDiscordChannel() {
+  const editKey = document.getElementById('d-edit-key').value;
+  const data = {
+    key:         document.getElementById('d-key').value.trim(),
+    label:       document.getElementById('d-label').value.trim(),
+    webhook_url: document.getElementById('d-webhook').value.trim(),
+  };
+  if (!data.label || (!editKey && !data.key)) { toast('チャンネル名とキーを入力してください', 'error'); return; }
+  if (editKey) await api('PUT',  `/api/discord/channel/${editKey}`, data);
+  else         await api('POST', '/api/discord/channel', data);
+  bootstrap.Modal.getInstance(document.getElementById('modalDiscord')).hide();
+  toast('保存しました'); loadDiscord();
+}
+
+async function deleteDiscordChannel(key) {
+  if (!confirm(`「${key}」を削除しますか？`)) return;
+  await api('DELETE', `/api/discord/channel/${key}`); toast('削除しました'); loadDiscord();
+}
+
+async function testDiscord(key) {
+  const r = await api('POST', `/api/discord/test/${key}`);
+  r.ok ? toast('テスト通知を送信しました ✅') : toast(r.error || '送信失敗', 'error');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════════════════════════════
+async function loadSettings() {
+  const [s, net] = await Promise.all([
+    api('GET', '/api/settings'),
+    api('GET', '/api/network-info'),
+  ]);
+
+  // クラウドモード時はストレージ設定を隠す
+  if (isCloud) {
+    const sec = document.getElementById('local-storage-section');
+    if (sec) sec.style.display = 'none';
+    const badge = document.getElementById('cloud-mode-badge');
+    if (badge) badge.style.display = 'block';
+  }
+
+  document.getElementById('db-path').value   = s.storage?.db_path   || '';
+  document.getElementById('keep-days').value = s.storage?.keep_days || 30;
+
+  const mEl = document.getElementById('mobile-url');
+  if (mEl && net.mobile_url) {
+    mEl.textContent = net.mobile_url;
+    try {
+      await QRCode.toCanvas(document.getElementById('qr-canvas'), net.mobile_url,
+        { width: 130, margin: 1, color: { dark:'#000', light:'#fff' } });
+    } catch(e) {}
+  }
+
+  const vUrl = (net.vercel_url || s.vercel_url || '').trim();
+  document.getElementById('vercel-url-input').value = vUrl;
+  updateVercelDisplay(vUrl);
+}
+
+function updateVercelDisplay(vUrl) {
+  const disp = document.getElementById('vercel-url-display');
+  if (!vUrl) { disp.style.display = 'none'; return; }
+  disp.style.display = 'block';
+  const link = document.getElementById('vercel-url-link');
+  link.href = vUrl;
+  link.innerHTML = '<i class="bi bi-box-arrow-up-right"></i> ' + vUrl + ' で開く';
+  try {
+    QRCode.toCanvas(document.getElementById('qr-vercel-canvas'), vUrl,
+      { width: 120, margin: 1, color: { dark:'#000', light:'#fff' } });
+  } catch(e) {}
+}
+
+async function saveVercelUrl() {
+  const vUrl = document.getElementById('vercel-url-input').value.trim();
+  await api('POST', '/api/settings', { vercel_url: vUrl });
+  updateVercelDisplay(vUrl);
+  toast(vUrl ? 'Vercel URL を保存しました' : 'URLを削除しました');
+}
+
+function copyMobileUrl() {
+  const url = document.getElementById('mobile-url')?.textContent?.trim();
+  if (!url) return;
+  navigator.clipboard.writeText(url)
+    .then(() => toast('URLをコピーしました'))
+    .catch(() => toast('コピー失敗', 'error'));
+}
+
+async function saveSettings() {
+  await api('POST', '/api/settings', {
+    storage: {
+      db_path:   document.getElementById('db-path').value.trim(),
+      keep_days: parseInt(document.getElementById('keep-days').value),
+    },
+  });
+  toast('保存しました');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  RUN / RESTART
+// ══════════════════════════════════════════════════════════════════════
+async function runMode(mode) {
+  toast('RSS収集 実行中...');
+  const r = await api('POST', `/api/run/${mode}`);
+  document.getElementById('run-log').textContent =
+    (r.stdout || '(出力なし)') + (r.stderr ? '\n\n--- STDERR ---\n' + r.stderr : '');
+  new bootstrap.Modal(document.getElementById('modalRun')).show();
+}
+
+async function restartServer() {
+  if (isCloud) { toast('クラウドモードでは再起動不要です'); return; }
+  const btn = document.getElementById('btn-restart');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i><span class="btn-label"> 再起動中…</span>';
+  try { await api('POST', '/api/restart'); } catch(e) {}
+  let tries = 0;
+  const poll = setInterval(async () => {
+    tries++;
+    try {
+      const r = await fetch('/api/version', {cache:'no-store'});
+      if (r.ok) { clearInterval(poll); location.reload(); }
+    } catch(e) {}
+    if (tries > 30) {
+      clearInterval(poll);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i><span class="btn-label"> 再起動</span>';
+      alert('再起動がタイムアウトしました。start_gui.vbs を実行してください。');
+    }
+  }, 500);
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+function channelLabel(key) {
+  const ch = channels.find(c => c.key === key);
+  return ch ? ch.label : (key || '-');
+}
+
+async function refreshChannelSelects() {
+  channels = await api('GET', '/api/discord');
+  if (!Array.isArray(channels)) channels = [];
+  const opts = channels.length
+    ? channels.map(ch => `<option value="${ch.key}">${ch.label}</option>`).join('')
+    : '<option value="default">(Discordチャンネル未設定)</option>';
+  const el = document.getElementById('f-channel');
+  if (el) el.innerHTML = opts;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    const vr = await api('GET', '/api/version');
+    const el = document.getElementById('ver-label');
+    if (el && vr.version) el.textContent = 'v' + vr.version;
+    isCloud = !!vr.is_cloud;
+    if (isCloud) {
+      document.getElementById('cloud-badge').style.display = 'inline';
+      // クラウドではRSS実行・再起動ボタンを非表示
+      document.getElementById('btn-rss').style.display     = 'none';
+      document.getElementById('btn-restart').style.display = 'none';
+    }
+  } catch(e) {
+    document.getElementById('ver-label').textContent = '(ver不明)';
+  }
+
+  // フィードを先読みしてからダッシュボードを初期化
+  feedsData = await api('GET', '/api/feeds');
+  if (!Array.isArray(feedsData)) feedsData = [];
+  allCategories = await api('GET', '/api/categories');
+  await buildCatFilters();
+  await loadDashboard();
+})();
+</script>
+</body>
+</html>
