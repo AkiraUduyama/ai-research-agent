@@ -368,6 +368,26 @@ def run_mode(mode):
     except Exception as e:
         return err(str(e))
 
+@app.route("/api/debug-cloud")
+def debug_cloud():
+    import traceback
+    result = {"is_cloud": IS_CLOUD}
+    try:
+        st = get_storage()
+        result["has_storage"] = st is not None
+        if st:
+            cfg = st.read_config()
+            result["config_keys"] = list(cfg.keys())
+            result["links_count"] = len(cfg.get("links", []))
+            # 書き込みテスト
+            cfg.setdefault("_debug_writes", 0)
+            cfg["_debug_writes"] += 1
+            ok_write = st.write_config(cfg)
+            result["write_ok"] = ok_write
+    except Exception as e:
+        result["error"] = traceback.format_exc()
+    return jsonify(result)
+
 # ─── launch ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     migrate_config()
