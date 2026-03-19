@@ -647,7 +647,14 @@ document.querySelectorAll('#sideNav .nav-link').forEach(link => {
 // ══════════════════════════════════════════════════════════════════════
 let _popupWin = null;
 
-function openInViewer(url, name) {
+async function openInViewer(url, name) {
+  // 毎回サーバーから最新のPINを取得（キャッシュ・タイミング問題を防ぐ）
+  if (!pinUnlocked) {
+    try {
+      const s = await api('GET', '/api/settings');
+      linkPin = (s && s.link_pin) ? s.link_pin : '';
+    } catch(e) {}
+  }
   if (linkPin && !pinUnlocked) {
     _pendingUrl  = url;
     _pendingName = name;
