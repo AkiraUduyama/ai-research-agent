@@ -303,26 +303,26 @@ body { display:flex; min-height:100vh; background:#f1f5f9; font-size:.92rem; mar
         </div>
       </div>
 
-      <!-- リンクロック（暗証番号） -->
+      <!-- アプリロック（暗証番号） -->
       <div class="col-md-6">
         <div class="card">
-          <div class="card-header">🔒 リンクロック（暗証番号）</div>
+          <div class="card-header">🔒 アプリロック（暗証番号）</div>
           <div class="card-body">
             <div id="pin-status-badge" class="alert alert-info py-1 px-2 small mb-2">
               🔒 暗証番号: 読込中...
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-bold">新しい暗証番号（空欄で解除）</label>
+              <label class="form-label small fw-bold">新しい暗証番号（空欄でデフォルト1224に戻す）</label>
               <input class="form-control form-control-sm" id="link-pin-input"
                 type="password" placeholder="例: 1234" maxlength="20"
                 autocomplete="new-password">
             </div>
-            <div class="form-text mb-3">設定するとリンクを開く前に暗証番号の入力が必要になります。ページを再読み込みするとロックが掛かります。</div>
+            <div class="form-text mb-3">アプリを開くたびに暗証番号の入力が必要になります。</div>
             <button class="btn btn-primary btn-sm" onclick="saveLinkPin()">
               <i class="bi bi-save"></i> 保存
             </button>
             <button class="btn btn-outline-danger btn-sm ms-2" onclick="clearLinkPin()">
-              <i class="bi bi-lock-fill"></i> 解除
+              <i class="bi bi-arrow-counterclockwise"></i> デフォルトに戻す
             </button>
           </div>
         </div>
@@ -555,29 +555,31 @@ body { display:flex; min-height:100vh; background:#f1f5f9; font-size:.92rem; mar
   </div>
 </div>
 
-<!-- ── PIN 入力モーダル ── -->
-<div class="modal fade" id="modalPin" tabindex="-1">
-  <div class="modal-dialog modal-sm modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header border-0 pb-0">
-        <h6 class="modal-title"><i class="bi bi-lock-fill text-warning"></i> 暗証番号を入力</h6>
-      </div>
-      <div class="modal-body pt-2">
-        <input class="form-control text-center fs-5 fw-bold letter-spacing-wide"
-          id="pin-entry" type="password" placeholder="・・・・" maxlength="20"
-          autocomplete="off" style="letter-spacing:.3em"
-          onkeydown="if(event.key==='Enter')confirmPin()">
-        <div id="pin-error" class="text-danger small mt-2 text-center" style="display:none">
-          <i class="bi bi-x-circle"></i> 暗証番号が違います
-        </div>
-      </div>
-      <div class="modal-footer border-0 pt-0">
-        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">キャンセル</button>
-        <button class="btn btn-primary btn-sm" onclick="confirmPin()">
-          <i class="bi bi-unlock-fill"></i> 解除して開く
-        </button>
-      </div>
+<!-- ── アプリロック オーバーレイ ── -->
+<div id="app-lock-overlay" style="
+  position:fixed;inset:0;z-index:99999;
+  background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
+  display:flex;align-items:center;justify-content:center;
+">
+  <div style="text-align:center;color:#fff;width:300px">
+    <div style="font-size:3rem;margin-bottom:1rem">🔒</div>
+    <div style="font-size:1.2rem;font-weight:700;margin-bottom:.4rem">リサーチAgent</div>
+    <div style="font-size:.85rem;color:#94a3b8;margin-bottom:1.8rem">暗証番号を入力してください</div>
+    <input id="pin-entry" type="password" placeholder="・・・・" maxlength="20"
+      autocomplete="off"
+      style="width:100%;text-align:center;font-size:1.6rem;letter-spacing:.4em;
+             padding:.6rem;border-radius:10px;border:2px solid #334155;
+             background:#0f172a;color:#fff;outline:none;margin-bottom:.8rem"
+      onkeydown="if(event.key==='Enter')confirmPin()"
+      oninput="document.getElementById('pin-error').style.display='none'">
+    <div id="pin-error" style="color:#f87171;font-size:.82rem;margin-bottom:.8rem;display:none">
+      <i class="bi bi-x-circle"></i> 暗証番号が違います
     </div>
+    <button onclick="confirmPin()"
+      style="width:100%;padding:.65rem;border-radius:10px;border:none;
+             background:#4f46e5;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer">
+      <i class="bi bi-unlock-fill"></i> 入室
+    </button>
   </div>
 </div>
 
@@ -589,8 +591,6 @@ let channels = [], allCategories = [], feedsData = [], linksData = [], linkGroup
 let isCloud = false;
 let currentGroupViewId = 'ALL';
 let currentGroupFilter = ''; // '' = すべて, グループID = そのグループ
-let pinUnlocked = false; // このセッション中にロック解除済みか
-let _pendingUrl = null, _pendingName = null;
 function getPin() { return localStorage.getItem('link_pin') || '1224'; }
 
 // ── API ──────────────────────────────────────────────────────────────
@@ -643,40 +643,28 @@ document.querySelectorAll('#sideNav .nav-link').forEach(link => {
 });
 
 // ══════════════════════════════════════════════════════════════════════
-//  POPUP VIEWER  ＋  PIN LOCK
+//  APP PIN LOCK
 // ══════════════════════════════════════════════════════════════════════
-let _popupWin = null;
-
-function openInViewer(url, name) {
-  if (!pinUnlocked) {
-    _pendingUrl  = url;
-    _pendingName = name;
-    document.getElementById('pin-entry').value = '';
-    document.getElementById('pin-error').style.display = 'none';
-    const m = new bootstrap.Modal(document.getElementById('modalPin'));
-    m.show();
-    document.getElementById('modalPin').addEventListener('shown.bs.modal',
-      () => document.getElementById('pin-entry').focus(), { once: true });
-    return;
-  }
-  _doOpenPopup(url, name);
-}
-
 function confirmPin() {
   const entered = document.getElementById('pin-entry').value;
   if (entered === getPin()) {
-    pinUnlocked = true;
-    bootstrap.Modal.getInstance(document.getElementById('modalPin')).hide();
-    if (_pendingUrl) {
-      const u = _pendingUrl, n = _pendingName;
-      _pendingUrl = null; _pendingName = null;
-      _doOpenPopup(u, n);
-    }
+    sessionStorage.setItem('app_unlocked', '1');
+    document.getElementById('app-lock-overlay').style.display = 'none';
+    initApp();
   } else {
     document.getElementById('pin-error').style.display = 'block';
     document.getElementById('pin-entry').value = '';
     document.getElementById('pin-entry').focus();
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  POPUP VIEWER
+// ══════════════════════════════════════════════════════════════════════
+let _popupWin = null;
+
+function openInViewer(url, name) {
+  _doOpenPopup(url, name);
 }
 
 function _doOpenPopup(url) {
@@ -1364,7 +1352,7 @@ async function refreshChannelSelects() {
 }
 
 // ── Init ─────────────────────────────────────────────────────────────
-(async () => {
+async function initApp() {
   try {
     const vr = await api('GET', '/api/version');
     const el = document.getElementById('ver-label');
@@ -1387,6 +1375,15 @@ async function refreshChannelSelects() {
   allCategories = await api('GET', '/api/categories');
   await buildCatFilters();
   await loadDashboard();
+}
+
+(function() {
+  if (sessionStorage.getItem('app_unlocked') === '1') {
+    document.getElementById('app-lock-overlay').style.display = 'none';
+    initApp();
+  } else {
+    setTimeout(() => document.getElementById('pin-entry').focus(), 100);
+  }
 })();
 </script>
 </body>
